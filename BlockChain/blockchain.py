@@ -1,11 +1,12 @@
 import hashlib
 import json
-from time import time
+import time
 from uuid import uuid4
 from textwrap import dedent
 import requests
 from urllib.parse import urlparse
 from flask import Flask, jsonify, request
+import zerosms
 
 class Blockchain(object):
     def __init__(self):
@@ -17,20 +18,27 @@ class Blockchain(object):
     def newBlock(self, proof, previous_hash=None):
         block = {
             'index': len(self.chain) + 1,
-            'timestamp': time(),
+            'timestamp': time.time(),
             'transactions': self.current_transactions,
             'proof': proof,
             'previous_hash': previous_hash or self.hash(self.chain[-1]),
         }
         self.current_transactions = []
-        self.chain.append(block)
+        if (len(self.chain) != 0):
+            if (self.last_block['transactions'] != block['transactions'] and block['transactions'] != []):
+                self.chain.append(block)
+        else:
+            self.chain.append(block)
+        #print (self.chain)
         return block
 
-    def newTransaction(self, patientID, doctorID, dataLevel):
+    def newTransaction(self, patientID, doctorID, dataCategory, operation):
         self.current_transactions.append({
             "patientID" : patientID,
             "doctorID"  : doctorID,
-            "dataLevel" : dataLevel
+            "dataCategory" : dataCategory,
+            "Operation" : operation,
+            'timestamp': time.time()
         })
         return self.last_block['index'] + 1
 
@@ -54,7 +62,7 @@ class Blockchain(object):
         guess = f'{last_proof}{proof}'.encode()
         guess_hash = hashlib.sha256(guess).hexdigest()
         if guess_hash[:4] == "0000":
-            print (guess_hash)
+            #print (guess_hash)
             return True
         else:
             return False
@@ -94,7 +102,7 @@ class Blockchain(object):
 
         # Grab and verify the chains from all the nodes in our network
         for node in neighbours:
-            response = requests.get(f'http://{node}/chain')
+            response = requests.get(f'http://{node}:8000/chain')
 
             if response.status_code == 200:
                 length = response.json()['length']
@@ -124,35 +132,49 @@ blockchain = Blockchain()
 @app.route('/chain', methods=['GET'])
 def full_chain():
     response = {
-        'chain': blockchain.chain,
+        'chain': blockchain.chain[:],
         'length': len(blockchain.chain),
     }
     return jsonify(response), 200
 
 @app.route('/transactions/new', methods=['POST'])
 def new_transaction():
-    values = request.get_json()
-    print (values)
+    #values = request.get_json()
+    #print (values)
     # Create a new Transaction
-    index = blockchain.newTransaction(values['patientID'], values['doctorID'], values['dataLevel'])
-
+    #index = blockchain.newTransaction(values['patientID'], values['doctorID'], values['dataCategory'], values['Operation'])
+    operation = request.form['Operation']
+    doctorID = request.form['doctorID']
+    dataCategory = request.form['dataCategory']
+    if (operation == 'Opened'):
+        zerosms.sms(phno="7032830030",passwd="123456789",message=doctorID + ' Opened data of Category ' + dataCategory,receivernum="919176382108")
+    index = blockchain.newTransaction(request.form['patientID'], doctorID, dataCategory, operation)
     response = {'message': f'Transaction will be added to Block {index}'}
     return jsonify(response), 201
 
 @app.route('/mine', methods=['GET'])
 def mine():
     # We run the proof of work algorithm to get the next proof...
+    '''print (request.remote_addr)
+    if (request.remote_addr not in blockchain.nodes):
+        print ("Not present")
+        response = {
+            "message" : "Miner not register. Please register."
+        }
+    else:
+    print ("Present")'''
     last_block = blockchain.last_block
+    #print (last_block)
     last_proof = last_block['proof']
     proof = blockchain.proof_of_work(last_proof)
 
     # We must receive a reward for finding the proof.
     # The sender is "0" to signify that this node has mined a new coin.
-    blockchain.newTransaction(
+    '''blockchain.newTransaction(
         patientID="0",
         doctorID=node_identifier,
         dataLevel=1,
-    )
+    )'''
 
     # Forge the new Block by adding it to the chain
     previous_hash = blockchain.hash(last_block)
@@ -195,7 +217,6 @@ def list_of_nodes():
 @app.route('/nodes/resolve', methods=['GET'])
 def consensus():
     replaced = blockchain.resolve_conflicts()
-
     if replaced:
         response = {
             'message': 'Our chain was replaced',
@@ -209,5 +230,20 @@ def consensus():
 
     return jsonify(response), 200
 
+@app.route('/data_access_history',methods=['GET'])
+def dataAccess():
+    patientID = request.args['pid']
+    ret_List = []
+    a = {}
+    for block in blockchain.chain:
+        for i in block['transactions']:
+            a = {}
+            a['doctorID'] = i['doctorID']
+            a['dataCategory'] = i['dataCategory']
+            a['Operation'] = i['Operation']
+            a['Time'] = time.asctime( time.localtime(i['timestamp']))
+            ret_List.append(a)
+    return str(ret_List)
+
 if (__name__ == "__main__"):
-    app.run(port = 5000)
+    app.run(host='0.0.0.0',port = 8000,debug=True)

@@ -32,12 +32,12 @@ class Blockchain(object):
         #print (self.chain)
         return block
 
-    def newTransaction(self, patientID, doctorID, dataCategory, operation):
+    def newTransaction(self, patientID, dataID, dataName, data):
         self.current_transactions.append({
             "patientID" : patientID,
-            "doctorID"  : doctorID,
-            "dataCategory" : dataCategory,
-            "Operation" : operation,
+            "data_id" : dataID,
+            "data_name" : dataName,
+            "data" : data,
             'timestamp': time.time()
         })
         return self.last_block['index'] + 1
@@ -102,7 +102,7 @@ class Blockchain(object):
 
         # Grab and verify the chains from all the nodes in our network
         for node in neighbours:
-            response = requests.get(f'http://{node}:8000/chain')
+            response = requests.get(f'http://{node}:1000/chain')
 
             if response.status_code == 200:
                 length = response.json()['length']
@@ -143,12 +143,18 @@ def new_transaction():
     #print (values)
     # Create a new Transaction
     #index = blockchain.newTransaction(values['patientID'], values['doctorID'], values['dataCategory'], values['Operation'])
-    operation = request.form['Operation']
-    doctorID = request.form['doctorID']
-    dataCategory = request.form['dataCategory']
-    if (operation == 'Opened'):
-        zerosms.sms(phno="7032830030",passwd="123456789",message=doctorID + ' Opened data of Category ' + dataCategory,receivernum="919176382108")
-    index = blockchain.newTransaction(request.form['patientID'], doctorID, dataCategory, operation)
+    '''
+    "user_id" : "100",
+    "data_id" : "4",
+    "data_name" : "Orthopediac Information",
+    "data" : "[['Height','185 cm',''],['Weight','85 kg','']]"
+    '''
+    data_id = request.form['data_id']
+    data_name = request.form['data_name']
+    data = request.form['data']
+    # if (operation == 'Opened'):
+    #     zerosms.sms(phno="7032830030",passwd="123456789",message=doctorID + ' Opened data of Category ' + dataCategory,receivernum="919176382108")
+    index = blockchain.newTransaction(request.form['patientID'], data_id, data_name, data)
     response = {'message': f'Transaction will be added to Block {index}'}
     return jsonify(response), 201
 
@@ -170,11 +176,6 @@ def mine():
 
     # We must receive a reward for finding the proof.
     # The sender is "0" to signify that this node has mined a new coin.
-    '''blockchain.newTransaction(
-        patientID="0",
-        doctorID=node_identifier,
-        dataLevel=1,
-    )'''
 
     # Forge the new Block by adding it to the chain
     previous_hash = blockchain.hash(last_block)
@@ -198,6 +199,7 @@ def register_nodes():
         return "Error: Please supply a valid list of nodes", 400
 
     for node in nodes:
+        print (node)
         blockchain.register_node(node)
 
     response = {
@@ -230,21 +232,22 @@ def consensus():
 
     return jsonify(response), 200
 
-@app.route('/data_access_history',methods=['GET'])
+@app.route('/get_data',methods=['GET'])
 def dataAccess():
     patientID = request.args['pid']
+    data_id = request.args['data_id']
     ret_List = []
     a = {}
     for block in blockchain.chain:
         for i in block['transactions']:
             a = {}
-            if ( i['patientID'] == patientID ):
-                a['doctorID'] = i['doctorID']
-                a['dataCategory'] = i['dataCategory']
-                a['Operation'] = i['Operation']
-                a['Time'] = time.asctime( time.localtime(i['timestamp']))
-            ret_List.append(a)
+            if ( i['patientID'] == patientID and i['data_id'] == data_id ):
+                a['data_id'] = i['data_id']
+                a['data_name'] = i['data_name']
+                a['data'] = i['data']
+                a['Titimestampme'] = time.asctime( time.localtime(i['timestamp']))
+                ret_List.append(a)
     return str(ret_List)
 
 if (__name__ == "__main__"):
-    app.run(host='0.0.0.0',port = 8000,debug=True)
+    app.run(host='0.0.0.0',port = 1000,debug=True)
